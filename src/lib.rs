@@ -62,6 +62,15 @@ pub struct Time {
     pub milliseconds: u16,
 }
 
+impl Time {
+    pub fn dmyhm(&self) -> String {
+        format!(
+            "{:02}/{:02}/{:04} {:02}:{:02}",
+            self.day, self.month, self.year, self.hour, self.minute,
+        )
+    }
+}
+
 impl From<SYSTEMTIME> for Time {
     fn from(value: SYSTEMTIME) -> Self {
         Self {
@@ -92,7 +101,7 @@ pub fn system_time(file_time: FILETIME) -> Result<SYSTEMTIME, ()> {
 pub struct DirEntry {
     pub name: OsString,
     pub path: PathBuf,
-    pub creation_time: Time,
+    pub date_created: Time,
     pub last_access: Time,
     pub last_write: Time,
     pub attributes: FileAttributes,
@@ -141,7 +150,8 @@ pub fn walkdir<S: AsRef<Path>>(path: S) -> Result<Vec<DirEntry>, ()> {
 
                 let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
-                let creation_time = Time::from(system_time(fd.ftCreationTime)?);
+                //TODO: I'm fairly sure these dates are wrong.
+                let date_created = Time::from(system_time(fd.ftCreationTime)?);
                 let last_access = Time::from(system_time(fd.ftLastAccessTime)?);
                 let last_write = Time::from(system_time(fd.ftLastWriteTime)?);
 
@@ -158,7 +168,7 @@ pub fn walkdir<S: AsRef<Path>>(path: S) -> Result<Vec<DirEntry>, ()> {
                 files.push(DirEntry {
                     name,
                     path: p,
-                    creation_time,
+                    date_created,
                     last_access,
                     last_write,
                     attributes,

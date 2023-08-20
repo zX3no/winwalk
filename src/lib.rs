@@ -106,6 +106,7 @@ pub struct DirEntry {
     pub last_write: Time,
     pub attributes: FileAttributes,
     ///Size in bytes
+    //TODO: Change to u64, folders can just have a size of 0.
     pub size: Option<u64>,
 }
 
@@ -121,7 +122,7 @@ pub enum Error {
     InvalidSystemTime,
 }
 
-pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Vec<Result<DirEntry, Error>> {
+pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let search_pattern_wide: Vec<u16> = OsStr::new(path.as_ref())
             .encode_wide()
@@ -170,14 +171,13 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Vec<Result<DirE
                 p.push(path.as_ref());
                 p.push(name.clone());
 
-                //TODO: Handle walk errors?
                 if is_dir {
-                    if let Some(depth) = depth {
+                    if depth != 0 {
                         if depth - 1 != 0 {
-                            files.extend(walkdir(p.as_path(), Some(depth - 1)));
+                            files.extend(walkdir(p.as_path(), depth - 1));
                         }
                     } else {
-                        files.extend(walkdir(p.as_path(), None));
+                        files.extend(walkdir(p.as_path(), 0));
                     }
                 }
 

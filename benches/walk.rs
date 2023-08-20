@@ -4,7 +4,7 @@ use winwalk::*;
 
 fn walk(c: &mut Criterion) {
     c.bench_function("Function B", |b| {
-        b.iter(|| walkdir(black_box(Path::new("D:\\Opus")), Some(1)));
+        b.iter(|| walkdir(black_box(Path::new("D:\\Opus")), 1));
     });
 }
 

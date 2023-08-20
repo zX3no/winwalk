@@ -117,10 +117,6 @@ impl DirEntry {
         self.root.join(&self.name)
     }
     pub fn extension(&self) -> Option<&'_ OsStr> {
-        if self.is_folder() {
-            return None;
-        }
-
         let mut iter = self.name.as_os_str_bytes().rsplitn(2, |b| *b == b'.');
         let after = iter.next();
         let before = iter.next();
@@ -206,10 +202,8 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
                 }
 
                 files.push(Ok(DirEntry {
-                    // path,
-                    //Name can be moved into path???
-                    //TODO: There might actually be a fast way of creating the path
                     name,
+                    //TODO: Speed up?
                     root: path.to_path_buf(),
                     date_created,
                     last_access,

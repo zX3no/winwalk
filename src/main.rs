@@ -3,11 +3,7 @@ use winwalk::*;
 fn main() {
     for file in walkdir("D:\\Desktop", 1).into_iter().flatten() {
         let pad = if file.is_folder() { "  " } else { "--" };
-        println!(
-            "{pad}{}\t{:?}",
-            file.name.to_string_lossy(),
-            file.extension()
-        );
+        println!("{pad}{}", file.name.to_string_lossy(),);
         println!("  {:?}", file.path());
 
         println!(

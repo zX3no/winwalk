@@ -86,13 +86,13 @@ impl From<SYSTEMTIME> for Time {
     }
 }
 
-pub fn system_time(file_time: FILETIME) -> Result<SYSTEMTIME, ()> {
+pub fn system_time(file_time: FILETIME) -> Result<SYSTEMTIME, Error> {
     unsafe {
         let mut system_time: SYSTEMTIME = std::mem::zeroed();
         if FileTimeToSystemTime(&file_time, &mut system_time) != 0 {
             Ok(system_time)
         } else {
-            Err(())
+            Err(Error::InvalidSystemTime)
         }
     }
 }
@@ -115,7 +115,13 @@ impl DirEntry {
     }
 }
 
-pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Result<Vec<DirEntry>, ()> {
+#[derive(Debug)]
+pub enum Error {
+    InvalidSearch(PathBuf),
+    InvalidSystemTime,
+}
+
+pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let search_pattern_wide: Vec<u16> = OsStr::new(path.as_ref())
             .encode_wide()
@@ -149,9 +155,10 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Result<Vec<DirE
                 let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
                 //TODO: I'm fairly sure these dates are wrong.
-                let date_created = Time::from(system_time(fd.ftCreationTime)?);
-                let last_access = Time::from(system_time(fd.ftLastAccessTime)?);
-                let last_write = Time::from(system_time(fd.ftLastWriteTime)?);
+                //Handle unwraps better.
+                let date_created = Time::from(system_time(fd.ftCreationTime).unwrap());
+                let last_access = Time::from(system_time(fd.ftLastAccessTime).unwrap());
+                let last_write = Time::from(system_time(fd.ftLastWriteTime).unwrap());
 
                 let attributes = FileAttributes::from_bits_truncate(fd.dwFileAttributes);
                 let size =
@@ -163,17 +170,18 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Result<Vec<DirE
                 p.push(path.as_ref());
                 p.push(name.clone());
 
+                //TODO: Handle walk errors?
                 if is_dir {
                     if let Some(depth) = depth {
                         if depth - 1 != 0 {
-                            files.extend(walkdir(p.as_path(), Some(depth - 1))?);
+                            files.extend(walkdir(p.as_path(), Some(depth - 1)));
                         }
                     } else {
-                        files.extend(walkdir(p.as_path(), None)?);
+                        files.extend(walkdir(p.as_path(), None));
                     }
                 }
 
-                files.push(DirEntry {
+                files.push(Ok(DirEntry {
                     name,
                     path: p,
                     date_created,
@@ -181,7 +189,7 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Result<Vec<DirE
                     last_write,
                     attributes,
                     size,
-                });
+                }));
 
                 fd = std::mem::zeroed();
 
@@ -192,9 +200,10 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Result<Vec<DirE
 
             FindClose(search_handle);
 
-            Ok(files)
+            files
         } else {
-            Err(())
+            files.push(Err(Error::InvalidSearch(path.as_ref().to_path_buf())));
+            files
         }
     }
 }

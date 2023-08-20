@@ -1,13 +1,7 @@
-use std::time::Instant;
-
 use winwalk::*;
 
 fn main() {
-    let now = Instant::now();
-    let files = walkdir("D:\\Opus", Some(1)).unwrap();
-    println!("{:?} {}", now.elapsed(), files.len());
-
-    for file in walkdir("D:\\Desktop", Some(1)).unwrap() {
+    for file in walkdir("D:\\Desktop", Some(1)).into_iter().flatten() {
         let pad = if file.is_folder() { "  " } else { "--" };
         println!("{pad}{}", file.name.to_string_lossy());
         println!("  {:?}", file.path);

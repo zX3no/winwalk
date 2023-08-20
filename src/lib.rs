@@ -1,3 +1,4 @@
+#![feature(os_str_bytes)]
 use bitflags::bitflags;
 use std::{
     ffi::{OsStr, OsString},
@@ -100,7 +101,8 @@ pub fn system_time(file_time: FILETIME) -> Result<SYSTEMTIME, Error> {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DirEntry {
     pub name: OsString,
-    pub path: PathBuf,
+    pub root: PathBuf,
+    // pub path: PathBuf,
     pub date_created: Time,
     pub last_access: Time,
     pub last_write: Time,
@@ -111,6 +113,23 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
+    pub fn path(&self) -> PathBuf {
+        self.root.join(&self.name)
+    }
+    pub fn extension(&self) -> Option<&'_ OsStr> {
+        if self.is_folder() {
+            return None;
+        }
+
+        let mut iter = self.name.as_os_str_bytes().rsplitn(2, |b| *b == b'.');
+        let after = iter.next();
+        let before = iter.next();
+        if before == Some(b"") {
+            None
+        } else {
+            unsafe { after.map(|s| &*(s as *const [u8] as *const OsStr)) }
+        }
+    }
     pub fn is_folder(&self) -> bool {
         self.attributes.contains(FileAttributes::DIRECTORY)
     }
@@ -122,9 +141,12 @@ pub enum Error {
     InvalidSystemTime,
 }
 
+//TODO: Allow &[u16] as well as path?
+//There might be a way to use an enum + Into
 pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
-        let search_pattern_wide: Vec<u16> = OsStr::new(path.as_ref())
+        let path = path.as_ref();
+        let search_pattern_wide: Vec<u16> = OsStr::new(path)
             .encode_wide()
             .chain(Some(b'\\' as u16).into_iter())
             .chain(Some(b'*' as u16).into_iter())
@@ -153,37 +175,42 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
                     continue;
                 }
 
-                let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                let is_folder = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
                 //TODO: I'm fairly sure these dates are wrong.
                 //Handle unwraps better.
-                let date_created = Time::from(system_time(fd.ftCreationTime).unwrap());
-                let last_access = Time::from(system_time(fd.ftLastAccessTime).unwrap());
-                let last_write = Time::from(system_time(fd.ftLastWriteTime).unwrap());
+                // let date_created = Time::from(system_time(fd.ftCreationTime).unwrap());
+                // let last_access = Time::from(system_time(fd.ftLastAccessTime).unwrap());
+                // let last_write = Time::from(system_time(fd.ftLastWriteTime).unwrap());
+
+                let date_created = Time::default();
+                let last_access = Time::default();
+                let last_write = Time::default();
 
                 let attributes = FileAttributes::from_bits_truncate(fd.dwFileAttributes);
                 let size =
                     (fd.nFileSizeHigh as u64 * (MAXDWORD as u64 + 1)) + fd.nFileSizeLow as u64;
-                let size = if is_dir { None } else { Some(size) };
+                let size = if is_folder { None } else { Some(size) };
 
                 //TODO: Path might not actually exist.
-                let mut p = PathBuf::new();
-                p.push(path.as_ref());
-                p.push(name.clone());
-
-                if is_dir {
+                if is_folder {
                     if depth != 0 {
                         if depth - 1 != 0 {
+                            let p = path.join(name.clone());
                             files.extend(walkdir(p.as_path(), depth - 1));
                         }
                     } else {
+                        let p = path.join(name.clone());
                         files.extend(walkdir(p.as_path(), 0));
                     }
                 }
 
                 files.push(Ok(DirEntry {
+                    // path,
+                    //Name can be moved into path???
+                    //TODO: There might actually be a fast way of creating the path
                     name,
-                    path: p,
+                    root: path.to_path_buf(),
                     date_created,
                     last_access,
                     last_write,
@@ -202,7 +229,7 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
 
             files
         } else {
-            files.push(Err(Error::InvalidSearch(path.as_ref().to_path_buf())));
+            files.push(Err(Error::InvalidSearch(path.to_path_buf())));
             files
         }
     }

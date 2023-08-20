@@ -4,10 +4,10 @@ use winwalk::*;
 
 fn main() {
     let now = Instant::now();
-    let files = walkdir("D:\\Opus").unwrap();
+    let files = walkdir("D:\\Opus", Some(1)).unwrap();
     println!("{:?} {}", now.elapsed(), files.len());
 
-    for file in walkdir("D:\\Desktop").unwrap() {
+    for file in walkdir("D:\\Desktop", Some(1)).unwrap() {
         let pad = if file.is_folder() { "  " } else { "--" };
         println!("{pad}{}", file.name.to_string_lossy());
         println!("  {:?}", file.path);

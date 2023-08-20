@@ -115,9 +115,7 @@ impl DirEntry {
     }
 }
 
-//TODO: Depth + Recursion.
-//Options to ignore hidden and system files.
-pub fn walkdir<S: AsRef<Path>>(path: S) -> Result<Vec<DirEntry>, ()> {
+pub fn walkdir<S: AsRef<Path>>(path: S, depth: Option<usize>) -> Result<Vec<DirEntry>, ()> {
     unsafe {
         let search_pattern_wide: Vec<u16> = OsStr::new(path.as_ref())
             .encode_wide()
@@ -164,6 +162,16 @@ pub fn walkdir<S: AsRef<Path>>(path: S) -> Result<Vec<DirEntry>, ()> {
                 let mut p = PathBuf::new();
                 p.push(path.as_ref());
                 p.push(name.clone());
+
+                if is_dir {
+                    if let Some(depth) = depth {
+                        if depth - 1 != 0 {
+                            files.extend(walkdir(p.as_path(), Some(depth - 1))?);
+                        }
+                    } else {
+                        files.extend(walkdir(p.as_path(), None)?);
+                    }
+                }
 
                 files.push(DirEntry {
                     name,

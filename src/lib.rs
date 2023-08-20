@@ -1,10 +1,10 @@
 use bitflags::bitflags;
-use std::os::windows::ffi::OsStrExt;
 use std::ptr::{self};
 use std::{
     ffi::{OsStr, OsString},
     os::windows::prelude::OsStringExt,
 };
+use std::{os::windows::ffi::OsStrExt, path::PathBuf};
 use winapi::um::{
     minwinbase::{SYSTEMTIME, WIN32_FIND_DATAW},
     winnt::MAXDWORD,
@@ -85,6 +85,7 @@ impl From<FILETIME> for FileTime {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirEntry {
     pub name: OsString,
+    pub path: PathBuf,
     pub creation_time: FileTime,
     pub last_access: FileTime,
     pub last_write: FileTime,
@@ -132,8 +133,14 @@ pub fn walkdir<S: AsRef<str>>(path: S) -> Result<Vec<DirEntry>, ()> {
             let size = (fd.nFileSizeHigh as u64 * (MAXDWORD as u64 + 1)) + fd.nFileSizeLow as u64;
             let size = if is_dir { None } else { Some(size) };
 
+            //TODO: Path might not actually exist.
+            let mut p = PathBuf::new();
+            p.push(path.as_ref());
+            p.push(name.clone());
+
             files.push(DirEntry {
                 name,
+                path: p,
                 creation_time: creation_time.into(),
                 last_access: last_access.into(),
                 last_write: last_write.into(),

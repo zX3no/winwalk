@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-winapi = { version = "0.3", features = ["fileapi", "handleapi"] }
-bitflags = "1.2"
+winapi = { version = "0.3", features = ["fileapi", "handleapi", "timezoneapi"] }
+bitflags = "2.4.0"

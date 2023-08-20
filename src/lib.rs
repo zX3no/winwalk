@@ -20,7 +20,7 @@ use winapi::{
 };
 
 bitflags! {
-  #[derive(Debug, PartialEq, Clone)]
+  #[derive(Debug, PartialEq, Clone, Default)]
    pub struct FileAttributes: DWORD {
         const READONLY = 0x00000001;
         const HIDDEN = 0x00000002;
@@ -47,7 +47,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FileTime {
     pub low: u32,
     pub high: u32,
@@ -82,7 +82,7 @@ impl From<FILETIME> for FileTime {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DirEntry {
     pub name: OsString,
     pub path: PathBuf,
@@ -95,7 +95,7 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
-    pub fn is_dir(&self) -> bool {
+    pub fn is_folder(&self) -> bool {
         self.attributes.contains(FileAttributes::DIRECTORY)
     }
 }
@@ -123,6 +123,16 @@ pub fn walkdir<S: AsRef<str>>(path: S) -> Result<Vec<DirEntry>, ()> {
                 .position(|&c| c == b'\0' as u16)
                 .unwrap_or(fd.cFileName.len());
             let name = OsString::from_wide(&fd.cFileName[..nul_range_end]);
+
+            //Skip these results.
+            if name == ".." || name == "." {
+                fd = unsafe { std::mem::zeroed() };
+                if unsafe { FindNextFileW(search_handle, &mut fd) == 0 } {
+                    break;
+                }
+                continue;
+            }
+
             let is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
             let creation_time = fd.ftCreationTime;

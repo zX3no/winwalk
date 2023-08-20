@@ -10,7 +10,7 @@ fn main() {
     for file in walkdir("D:\\Desktop").unwrap() {
         let system_time = file.last_write.system_time().unwrap();
 
-        let pad = if file.is_dir() { "  " } else { "--" };
+        let pad = if file.is_folder() { "  " } else { "--" };
         println!("{pad}{}", file.name.to_string_lossy());
         println!("  {:?}", file.path);
 

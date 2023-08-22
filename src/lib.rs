@@ -101,8 +101,7 @@ pub fn system_time(file_time: FILETIME) -> Result<SYSTEMTIME, Error> {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DirEntry {
     pub name: OsString,
-    pub root: PathBuf,
-    // pub path: PathBuf,
+    pub path: PathBuf,
     pub date_created: Time,
     pub last_access: Time,
     pub last_write: Time,
@@ -113,9 +112,6 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
-    pub fn path(&self) -> PathBuf {
-        self.root.join(&self.name)
-    }
     pub fn extension(&self) -> Option<&'_ OsStr> {
         let mut iter = self.name.as_os_str_bytes().rsplitn(2, |b| *b == b'.');
         let after = iter.next();
@@ -137,8 +133,6 @@ pub enum Error {
     InvalidSystemTime,
 }
 
-//TODO: Allow &[u16] as well as path?
-//There might be a way to use an enum + Into
 pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let path = path.as_ref();
@@ -188,23 +182,23 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
                     (fd.nFileSizeHigh as u64 * (MAXDWORD as u64 + 1)) + fd.nFileSizeLow as u64;
                 let size = if is_folder { None } else { Some(size) };
 
-                //TODO: Path might not actually exist.
+                //TODO: Could be a faster way of getting path?
+                let mut path = path.to_path_buf();
+                path.push(&name);
+
                 if is_folder {
                     if depth != 0 {
                         if depth - 1 != 0 {
-                            let p = path.join(name.clone());
-                            files.extend(walkdir(p.as_path(), depth - 1));
+                            files.extend(walkdir(&path, depth - 1));
                         }
                     } else {
-                        let p = path.join(name.clone());
-                        files.extend(walkdir(p.as_path(), 0));
+                        files.extend(walkdir(&path, 0));
                     }
                 }
 
                 files.push(Ok(DirEntry {
                     name,
-                    //TODO: Speed up?
-                    root: path.to_path_buf(),
+                    path,
                     date_created,
                     last_access,
                     last_write,

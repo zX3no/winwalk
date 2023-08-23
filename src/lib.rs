@@ -169,13 +169,9 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
 
                 //TODO: I'm fairly sure these dates are wrong.
                 //Handle unwraps better.
-                // let date_created = Time::from(system_time(fd.ftCreationTime).unwrap());
-                // let last_access = Time::from(system_time(fd.ftLastAccessTime).unwrap());
-                // let last_write = Time::from(system_time(fd.ftLastWriteTime).unwrap());
-
-                let date_created = Time::default();
-                let last_access = Time::default();
-                let last_write = Time::default();
+                let date_created = Time::from(system_time(fd.ftCreationTime).unwrap());
+                let last_access = Time::from(system_time(fd.ftLastAccessTime).unwrap());
+                let last_write = Time::from(system_time(fd.ftLastWriteTime).unwrap());
 
                 let attributes = FileAttributes::from_bits_truncate(fd.dwFileAttributes);
                 let size =

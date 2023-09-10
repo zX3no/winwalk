@@ -1,4 +1,3 @@
-#![feature(os_str_bytes)]
 use bitflags::bitflags;
 use std::{
     ffi::{OsStr, OsString},
@@ -113,7 +112,7 @@ pub struct DirEntry {
 
 impl DirEntry {
     pub fn extension(&self) -> Option<&'_ OsStr> {
-        let mut iter = self.name.as_os_str_bytes().rsplitn(2, |b| *b == b'.');
+        let mut iter = self.name.as_encoded_bytes().rsplitn(2, |b| *b == b'.');
         let after = iter.next();
         let before = iter.next();
         if before == Some(b"") {

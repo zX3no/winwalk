@@ -2,6 +2,11 @@
 name = "winwalk"
 version = "0.1.0"
 edition = "2021"
+authors = ["Bay"]
+description = "Walk directories on Windows."
+repository = "https://github.com/zX3no/winwalk"
+readme = "README.md"
+license = "CC0-1.0"
 
 [dependencies]
 winapi = { version = "0.3", features = ["fileapi", "handleapi", "timezoneapi"] }

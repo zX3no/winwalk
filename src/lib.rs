@@ -1,30 +1,93 @@
 use bitflags::bitflags;
 use std::{
-    ffi::{OsStr, OsString},
-    os::windows::prelude::OsStringExt,
-};
-use std::{os::windows::ffi::OsStrExt, path::PathBuf};
-use std::{
-    path::Path,
+    ffi::{c_void, OsStr},
+    mem::transmute,
+    path::{Path, PathBuf},
     ptr::{self},
+    slice::from_raw_parts,
 };
-use winapi::um::{
-    minwinbase::{SYSTEMTIME, WIN32_FIND_DATAW},
-    winnt::MAXDWORD,
-};
-use winapi::um::{
-    timezoneapi::FileTimeToSystemTime,
-    winnt::{FILE_ATTRIBUTE_DIRECTORY, HANDLE},
-};
-use winapi::{shared::minwindef::DWORD, um::handleapi::INVALID_HANDLE_VALUE};
-use winapi::{
-    shared::minwindef::FILETIME,
-    um::fileapi::{FindClose, FindFirstFileW, FindNextFileW},
-};
+
+pub const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
+pub const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x00000010;
+
+#[rustfmt::skip]
+extern "system" {
+    pub fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
+
+    pub fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
+    pub fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
+
+    pub fn FindClose(hFindFile: *mut c_void) -> bool;
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct FindDataA {
+    pub file_attributes: u32,
+    pub creation_time: FileTime,
+    pub last_access_time: FileTime,
+    pub last_write_time: FileTime,
+    pub file_size_high: u32,
+    pub file_size_low: u32,
+    pub reserved0: u32,
+    pub reserved1: u32,
+    pub file_name: [i8; 260],
+    pub alternate_file_name: [i8; 14],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct FileTime {
+    dw_low_date_time: u32,
+    dw_high_date_time: u32,
+}
+
+#[derive(Debug)]
+pub enum Error {
+    InvalidSearch(PathBuf),
+    InvalidSystemTime,
+}
+
+impl TryInto<SystemTime> for FileTime {
+    type Error = Error;
+
+    fn try_into(self) -> Result<SystemTime, Self::Error> {
+        unsafe {
+            let mut system_time = SystemTime::default();
+            if FileTimeToSystemTime(&self, &mut system_time) {
+                Ok(system_time)
+            } else {
+                Err(Error::InvalidSystemTime)
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct SystemTime {
+    pub year: u16,
+    pub month: u16,
+    pub day_of_week: u16,
+    pub day: u16,
+    pub hour: u16,
+    pub minute: u16,
+    pub second: u16,
+    pub milliseconds: u16,
+}
+
+impl SystemTime {
+    pub fn dmyhm(&self) -> String {
+        format!(
+            "{:02}/{:02}/{:04} {:02}:{:02}",
+            self.day, self.month, self.year, self.hour, self.minute,
+        )
+    }
+}
 
 bitflags! {
   #[derive(Debug, PartialEq, Clone, Default)]
-   pub struct FileAttributes: DWORD {
+   pub struct FileAttributes: u32 {
         const READONLY = 0x00000001;
         const HIDDEN = 0x00000002;
         const SYSTEM = 0x00000004;
@@ -51,59 +114,12 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Time {
-    pub year: u16,
-    pub month: u16,
-    pub day_of_week: u16,
-    pub day: u16,
-    pub hour: u16,
-    pub minute: u16,
-    pub second: u16,
-    pub milliseconds: u16,
-}
-
-impl Time {
-    pub fn dmyhm(&self) -> String {
-        format!(
-            "{:02}/{:02}/{:04} {:02}:{:02}",
-            self.day, self.month, self.year, self.hour, self.minute,
-        )
-    }
-}
-
-impl From<SYSTEMTIME> for Time {
-    fn from(value: SYSTEMTIME) -> Self {
-        Self {
-            year: value.wYear,
-            month: value.wMonth,
-            day_of_week: value.wDayOfWeek,
-            day: value.wDay,
-            hour: value.wHour,
-            minute: value.wMinute,
-            second: value.wSecond,
-            milliseconds: value.wMilliseconds,
-        }
-    }
-}
-
-pub fn system_time(file_time: FILETIME) -> Result<SYSTEMTIME, Error> {
-    unsafe {
-        let mut system_time: SYSTEMTIME = std::mem::zeroed();
-        if FileTimeToSystemTime(&file_time, &mut system_time) != 0 {
-            Ok(system_time)
-        } else {
-            Err(Error::InvalidSystemTime)
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DirEntry {
-    pub name: OsString,
+    pub name: String,
     pub path: PathBuf,
-    pub date_created: Time,
-    pub last_access: Time,
-    pub last_write: Time,
+    pub date_created: SystemTime,
+    pub last_access: SystemTime,
+    pub last_write: SystemTime,
     pub attributes: FileAttributes,
     ///Size in bytes
     //TODO: Change to u64, folders can just have a size of 0.
@@ -112,7 +128,7 @@ pub struct DirEntry {
 
 impl DirEntry {
     pub fn extension(&self) -> Option<&'_ OsStr> {
-        let mut iter = self.name.as_encoded_bytes().rsplitn(2, |b| *b == b'.');
+        let mut iter = self.name.as_bytes().rsplitn(2, |b| *b == b'.');
         let after = iter.next();
         let before = iter.next();
         if before == Some(b"") {
@@ -126,55 +142,45 @@ impl DirEntry {
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
-    InvalidSearch(PathBuf),
-    InvalidSystemTime,
-}
-
 pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let path = path.as_ref();
-        let search_pattern_wide: Vec<u16> = OsStr::new(path)
-            .encode_wide()
-            .chain(Some(b'\\' as u16).into_iter())
-            .chain(Some(b'*' as u16).into_iter())
-            .chain(Some(0).into_iter())
-            .collect();
+        let search_pattern = [path.as_os_str().as_encoded_bytes(), &[b'\\', b'*', 0]].concat();
 
-        let mut fd: WIN32_FIND_DATAW = std::mem::zeroed();
-        let search_handle: HANDLE = FindFirstFileW(search_pattern_wide.as_ptr(), &mut fd);
+        let mut fd: FindDataA = std::mem::zeroed();
+        let search_handle = FindFirstFileA(search_pattern.as_ptr() as *mut i8, &mut fd);
         let mut files = Vec::new();
 
         if search_handle != ptr::null_mut() && search_handle != INVALID_HANDLE_VALUE {
             loop {
-                let nul_range_end = fd
-                    .cFileName
+                let end = fd
+                    .file_name
                     .iter()
-                    .position(|&c| c == b'\0' as u16)
-                    .unwrap_or_else(|| fd.cFileName.len());
-                let name = OsString::from_wide(&fd.cFileName[..nul_range_end]);
+                    .position(|&c| c == b'\0' as i8)
+                    .unwrap_or_else(|| fd.file_name.len());
+                let slice = from_raw_parts(fd.file_name.as_ptr() as *const u8, end);
+                let str: &str = transmute(slice);
+                let name = str.to_string();
 
                 //Skip these results.
                 if name == ".." || name == "." {
                     fd = std::mem::zeroed();
-                    if FindNextFileW(search_handle, &mut fd) == 0 {
+                    if !FindNextFileA(search_handle, &mut fd) {
                         break;
                     }
                     continue;
                 }
 
-                let is_folder = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                let is_folder = (fd.file_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
-                //TODO: I'm fairly sure these dates are wrong.
-                //Handle unwraps better.
-                let date_created = Time::from(system_time(fd.ftCreationTime).unwrap());
-                let last_access = Time::from(system_time(fd.ftLastAccessTime).unwrap());
-                let last_write = Time::from(system_time(fd.ftLastWriteTime).unwrap());
+                //TODO: I think these dates are wrong.
+                let date_created = fd.creation_time.try_into().unwrap();
+                let last_access = fd.last_access_time.try_into().unwrap();
+                let last_write = fd.last_write_time.try_into().unwrap();
 
-                let attributes = FileAttributes::from_bits_truncate(fd.dwFileAttributes);
+                let attributes = FileAttributes::from_bits_truncate(fd.file_attributes);
                 let size =
-                    (fd.nFileSizeHigh as u64 * (MAXDWORD as u64 + 1)) + fd.nFileSizeLow as u64;
+                    (fd.file_size_high as u64 * (u32::MAX as u64 + 1)) + fd.file_size_low as u64;
                 let size = if is_folder { None } else { Some(size) };
 
                 //TODO: Could be a faster way of getting path?
@@ -203,7 +209,7 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
 
                 fd = std::mem::zeroed();
 
-                if FindNextFileW(search_handle, &mut fd) == 0 {
+                if !FindNextFileA(search_handle, &mut fd) {
                     break;
                 }
             }

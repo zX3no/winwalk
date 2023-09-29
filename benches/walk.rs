@@ -1,34 +1,20 @@
 use criterion::*;
-use std::{
-    ffi::OsStr,
-    os::windows::{prelude::OsStrExt, raw::HANDLE},
-    path::Path,
-};
-use winapi::um::{
-    fileapi::{FindClose, FindFirstFileW, FindNextFileW},
-    handleapi::INVALID_HANDLE_VALUE,
-    minwinbase::WIN32_FIND_DATAW,
-    winnt::FILE_ATTRIBUTE_DIRECTORY,
-};
+use std::{ffi::c_void, path::Path};
 use winwalk::*;
 
-fn baseline<S: AsRef<Path>>(path: S, depth: usize) -> Vec<WIN32_FIND_DATAW> {
+fn baseline<S: AsRef<Path>>(path: S, depth: usize) -> Vec<FindDataA> {
     unsafe {
         let path = path.as_ref();
-        let search_pattern_wide: Vec<u16> = OsStr::new(path)
-            .encode_wide()
-            .chain(Some(b'\\' as u16).into_iter())
-            .chain(Some(b'*' as u16).into_iter())
-            .chain(Some(0).into_iter())
-            .collect();
+        let search_pattern = [path.as_os_str().as_encoded_bytes(), &[b'\\', b'*', 0]].concat();
 
-        let mut fd: WIN32_FIND_DATAW = std::mem::zeroed();
-        let search_handle: HANDLE = FindFirstFileW(search_pattern_wide.as_ptr(), &mut fd);
+        let mut fd: FindDataA = std::mem::zeroed();
+        let search_handle: *mut c_void =
+            FindFirstFileA(search_pattern.as_ptr() as *mut i8, &mut fd);
         let mut files = Vec::new();
 
         if search_handle != std::ptr::null_mut() && search_handle != INVALID_HANDLE_VALUE {
             loop {
-                let is_folder = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                let is_folder = (fd.file_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
                 if is_folder {
                     if depth != 0 {
@@ -44,7 +30,7 @@ fn baseline<S: AsRef<Path>>(path: S, depth: usize) -> Vec<WIN32_FIND_DATAW> {
 
                 fd = std::mem::zeroed();
 
-                if FindNextFileW(search_handle, &mut fd) == 0 {
+                if !FindNextFileA(search_handle, &mut fd) {
                     break;
                 }
             }

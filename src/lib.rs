@@ -5,6 +5,7 @@ use std::{
 
 const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
 
+#[link(name = "user32")]
 extern "system" {
     fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
     fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;

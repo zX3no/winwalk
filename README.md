@@ -1,4 +1,4 @@
-```rs
+```rust,no_run
 use winwalk::*;
 
 fn main() {

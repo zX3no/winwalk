@@ -1,7 +1,5 @@
 use std::{
     ffi::{c_void, OsStr},
-    mem::transmute,
-    ptr::{self},
     slice::from_raw_parts,
 };
 
@@ -154,27 +152,27 @@ impl DirEntry {
 pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let path = path.as_ref();
-        let search_pattern = [path.as_bytes(), &[b'\\', b'*', 0]].concat();
-
-        let mut fd: FindDataA = std::mem::zeroed();
-        let search_handle = FindFirstFileA(search_pattern.as_ptr() as *mut i8, &mut fd);
+        let mut fd: FindDataA = core::mem::zeroed();
         let mut files = Vec::new();
 
-        if search_handle != ptr::null_mut() && search_handle != INVALID_HANDLE_VALUE {
+        let search_pattern = [path.as_bytes(), &[b'\\', b'*', 0]].concat();
+        let search_handle = FindFirstFileA(search_pattern.as_ptr() as *mut i8, &mut fd);
+
+        if !search_handle.is_null() && search_handle != INVALID_HANDLE_VALUE {
             loop {
                 //Create the full path.
                 let end = fd
                     .file_name
                     .iter()
                     .position(|&c| c == b'\0' as i8)
-                    .unwrap_or_else(|| fd.file_name.len());
+                    .unwrap_or(fd.file_name.len());
                 let slice = from_raw_parts(fd.file_name.as_ptr() as *const u8, end);
-                let name: &str = transmute(slice);
+                let name: &str = core::str::from_utf8_unchecked(slice);
                 let path = [path, name].join("\\");
 
                 //Skip these results.
                 if name == ".." || name == "." {
-                    fd = std::mem::zeroed();
+                    fd = core::mem::zeroed();
                     if !FindNextFileA(search_handle, &mut fd) {
                         break;
                     }
@@ -192,17 +190,15 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
                     (fd.file_size_high as u64 * (u32::MAX as u64 + 1)) + fd.file_size_low as u64;
 
                 if is_folder {
-                    if depth != 0 {
-                        if depth - 1 != 0 {
-                            files.extend(walkdir(&path, depth - 1));
-                        }
-                    } else {
+                    if depth == 0 {
                         files.extend(walkdir(&path, 0));
+                    } else if depth - 1 != 0 {
+                        files.extend(walkdir(&path, depth - 1));
                     }
                 }
 
                 files.push(Ok(DirEntry {
-                    name: name.to_string(),
+                    name: name.to_owned(),
                     path,
                     date_created,
                     last_access,
@@ -212,7 +208,7 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
                     is_folder,
                 }));
 
-                fd = std::mem::zeroed();
+                fd = core::mem::zeroed();
 
                 if !FindNextFileA(search_handle, &mut fd) {
                     break;
@@ -220,12 +216,11 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
             }
 
             FindClose(search_handle);
-
-            files
         } else {
-            files.push(Err(Error::InvalidSearch(path.to_string())));
-            files
+            files.push(Err(Error::InvalidSearch(path.to_owned())));
         }
+
+        files
     }
 }
 

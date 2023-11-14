@@ -1,10 +1,8 @@
 use winwalk::*;
 
 fn main() {
-    for drive in drives() {
-        if let Some(drive) = drive {
-            println!("Found Drive: {drive}");
-        }
+    for drive in drives().into_iter().flatten() {
+        println!("Found Drive: {drive}");
     }
 
     println!();

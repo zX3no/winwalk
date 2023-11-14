@@ -13,11 +13,10 @@ pub const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x00000010;
 #[rustfmt::skip]
 extern "system" {
     pub fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
-
     pub fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
     pub fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
-
     pub fn FindClose(hFindFile: *mut c_void) -> bool;
+    pub fn GetLogicalDrives() -> u32;
 }
 
 #[repr(C)]
@@ -222,4 +221,19 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
             files
         }
     }
+}
+
+pub fn drives() -> [Option<char>; 26] {
+    let logical_drives = unsafe { GetLogicalDrives() };
+    let mut drives = [None; 26];
+    let mut mask = 1;
+
+    for (i, letter) in (b'A'..=b'Z').enumerate() {
+        if (logical_drives & mask) != 0 {
+            drives[i] = Some(letter as char);
+        }
+        mask <<= 1;
+    }
+
+    drives
 }

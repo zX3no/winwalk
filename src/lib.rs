@@ -1,27 +1,23 @@
-use bitflags::bitflags;
 use std::{
     ffi::{c_void, OsStr},
     mem::transmute,
-    path::{Path, PathBuf},
     ptr::{self},
     slice::from_raw_parts,
 };
 
-pub const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
-pub const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x00000010;
+const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
 
-#[rustfmt::skip]
 extern "system" {
-    pub fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
-    pub fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
-    pub fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
-    pub fn FindClose(hFindFile: *mut c_void) -> bool;
-    pub fn GetLogicalDrives() -> u32;
+    fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
+    fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
+    fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
+    fn FindClose(hFindFile: *mut c_void) -> bool;
+    fn GetLogicalDrives() -> u32;
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-pub struct FindDataA {
+struct FindDataA {
     pub file_attributes: u32,
     pub creation_time: FileTime,
     pub last_access_time: FileTime,
@@ -36,14 +32,14 @@ pub struct FindDataA {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
-pub struct FileTime {
-    dw_low_date_time: u32,
-    dw_high_date_time: u32,
+struct FileTime {
+    pub dw_low_date_time: u32,
+    pub dw_high_date_time: u32,
 }
 
 #[derive(Debug)]
 pub enum Error {
-    InvalidSearch(PathBuf),
+    InvalidSearch(String),
     InvalidSystemTime,
 }
 
@@ -76,6 +72,7 @@ pub struct SystemTime {
 }
 
 impl SystemTime {
+    /// Returns the date in day/month/year hour:minute format.
     pub fn dmyhm(&self) -> String {
         format!(
             "{:02}/{:02}/{:04} {:02}:{:02}",
@@ -84,45 +81,46 @@ impl SystemTime {
     }
 }
 
-bitflags! {
-  #[derive(Debug, PartialEq, Clone, Default)]
-   pub struct FileAttributes: u32 {
-        const READONLY = 0x00000001;
-        const HIDDEN = 0x00000002;
-        const SYSTEM = 0x00000004;
-        const DIRECTORY = 0x00000010;
-        const ARCHIVE = 0x00000020;
-        const DEVICE = 0x00000040;
-        const NORMAL = 0x00000080;
-        const TEMPORARY = 0x00000100;
-        const SPARSE_FILE = 0x00000200;
-        const REPARSE_POINT = 0x00000400;
-        const COMPRESSED = 0x00000800;
-        const OFFLINE = 0x00001000;
-        const NOT_CONTENT_INDEXED = 0x00002000;
-        const ENCRYPTED = 0x00004000;
-        const INTEGRITY_STREAM = 0x00008000;
-        const VIRTUAL = 0x00010000;
-        const NO_SCRUB_DATA = 0x00020000;
-        const EA = 0x00040000;
-        const PINNED = 0x00080000;
-        const UNPINNED = 0x00100000;
-        const RECALL_ON_OPEN = 0x00400000;
-        const RECALL_ON_DATA_ACCESS = 0x00400000;
-    }
+/// File attributes are metadata values stored by the file system on disk.
+///
+/// [File Attribute Constants - MSDN](https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants)
+pub mod attributes {
+    pub const READONLY: u32 = 0x00000001;
+    pub const HIDDEN: u32 = 0x00000002;
+    pub const SYSTEM: u32 = 0x00000004;
+    pub const DIRECTORY: u32 = 0x00000010;
+    pub const ARCHIVE: u32 = 0x00000020;
+    pub const DEVICE: u32 = 0x00000040;
+    pub const NORMAL: u32 = 0x00000080;
+    pub const TEMPORARY: u32 = 0x00000100;
+    pub const SPARSE_FILE: u32 = 0x00000200;
+    pub const REPARSE_POINT: u32 = 0x00000400;
+    pub const COMPRESSED: u32 = 0x00000800;
+    pub const OFFLINE: u32 = 0x00001000;
+    pub const NOT_CONTENT_INDEXED: u32 = 0x00002000;
+    pub const ENCRYPTED: u32 = 0x00004000;
+    pub const INTEGRITY_STREAM: u32 = 0x00008000;
+    pub const VIRTUAL: u32 = 0x00010000;
+    pub const NO_SCRUB_DATA: u32 = 0x00020000;
+    pub const EA: u32 = 0x00040000;
+    pub const PINNED: u32 = 0x00080000;
+    pub const UNPINNED: u32 = 0x00100000;
+    pub const RECALL_ON_OPEN: u32 = 0x00400000;
+    pub const RECALL_ON_DATA_ACCESS: u32 = 0x00400000;
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DirEntry {
     pub name: String,
-    pub path: PathBuf,
+    pub path: String,
     pub date_created: SystemTime,
     pub last_access: SystemTime,
     pub last_write: SystemTime,
-    pub attributes: FileAttributes,
-    ///Size in bytes
-    //TODO: Change to u64, folders can just have a size of 0.
-    pub size: Option<u64>,
+    /// Bitflag for file [attributes].
+    pub attributes: u32,
+    /// Size in bytes.
+    pub size: u64,
+    pub is_folder: bool,
 }
 
 impl DirEntry {
@@ -136,15 +134,27 @@ impl DirEntry {
             unsafe { after.map(|s| &*(s as *const [u8] as *const OsStr)) }
         }
     }
-    pub fn is_folder(&self) -> bool {
-        self.attributes.contains(FileAttributes::DIRECTORY)
-    }
 }
 
-pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
+/// Traverse the requested directory.
+///
+/// A depth of `0` will set no limit.
+///
+/// ```
+/// for file in winwalk::walkdir("D:\\Desktop", 1).into_iter().flatten() {
+///     println!("Name: {}", file.name);
+///     println!("Path: {}", file.path);
+///     println!("Size: {}", file.size);
+///     println!("Folder?: {}", file.is_folder);
+///     println!("Last Write: {:?}", file.last_write);
+///     println!("Last Access: {:?}", file.last_access);
+///     println!("Attributes: {:?}", file.attributes);
+/// }
+/// ```
+pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let path = path.as_ref();
-        let search_pattern = [path.as_os_str().as_encoded_bytes(), &[b'\\', b'*', 0]].concat();
+        let search_pattern = [path.as_bytes(), &[b'\\', b'*', 0]].concat();
 
         let mut fd: FindDataA = std::mem::zeroed();
         let search_handle = FindFirstFileA(search_pattern.as_ptr() as *mut i8, &mut fd);
@@ -152,14 +162,15 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
 
         if search_handle != ptr::null_mut() && search_handle != INVALID_HANDLE_VALUE {
             loop {
+                //Create the full path.
                 let end = fd
                     .file_name
                     .iter()
                     .position(|&c| c == b'\0' as i8)
                     .unwrap_or_else(|| fd.file_name.len());
                 let slice = from_raw_parts(fd.file_name.as_ptr() as *const u8, end);
-                let str: &str = transmute(slice);
-                let name = str.to_string();
+                let name: &str = transmute(slice);
+                let path = [path, name].join("\\");
 
                 //Skip these results.
                 if name == ".." || name == "." {
@@ -170,21 +181,15 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
                     continue;
                 }
 
-                let is_folder = (fd.file_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                let is_folder = (fd.file_attributes & attributes::DIRECTORY) != 0;
 
                 //TODO: I think these dates are wrong.
                 let date_created = fd.creation_time.try_into().unwrap();
                 let last_access = fd.last_access_time.try_into().unwrap();
                 let last_write = fd.last_write_time.try_into().unwrap();
 
-                let attributes = FileAttributes::from_bits_truncate(fd.file_attributes);
                 let size =
                     (fd.file_size_high as u64 * (u32::MAX as u64 + 1)) + fd.file_size_low as u64;
-                let size = if is_folder { None } else { Some(size) };
-
-                //TODO: Could be a faster way of getting path?
-                let mut path = path.to_path_buf();
-                path.push(&name);
 
                 if is_folder {
                     if depth != 0 {
@@ -197,13 +202,14 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
                 }
 
                 files.push(Ok(DirEntry {
-                    name,
+                    name: name.to_string(),
                     path,
                     date_created,
                     last_access,
                     last_write,
-                    attributes,
+                    attributes: fd.file_attributes,
                     size,
+                    is_folder,
                 }));
 
                 fd = std::mem::zeroed();
@@ -217,12 +223,13 @@ pub fn walkdir<S: AsRef<Path>>(path: S, depth: usize) -> Vec<Result<DirEntry, Er
 
             files
         } else {
-            files.push(Err(Error::InvalidSearch(path.to_path_buf())));
+            files.push(Err(Error::InvalidSearch(path.to_string())));
             files
         }
     }
 }
 
+/// Get the current system drives. `A-Z` `0-25`
 pub fn drives() -> [Option<char>; 26] {
     let logical_drives = unsafe { GetLogicalDrives() };
     let mut drives = [None; 26];

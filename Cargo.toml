@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Bay"]
 description = "Walk directories on Windows."
 repository = "https://github.com/zX3no/winwalk"
+documentation = "https://docs.rs/winwalk"
 readme = "README.md"
 license = "CC0-1.0"
 

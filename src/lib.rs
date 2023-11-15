@@ -40,6 +40,7 @@ struct FileTime {
 pub enum Error {
     InvalidSearch(String),
     InvalidSystemTime,
+    InvalidUtf8,
 }
 
 impl TryInto<SystemTime> for FileTime {
@@ -168,7 +169,19 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
                     .position(|&c| c == b'\0' as i8)
                     .unwrap_or(fd.file_name.len());
                 let slice = from_raw_parts(fd.file_name.as_ptr() as *const u8, end);
-                let name: &str = core::str::from_utf8_unchecked(slice);
+                //TODO: Change to utf-16 or osstr.
+                //https://github.com/rust-lang/rust/issues/12056
+                let name = match core::str::from_utf8(slice) {
+                    Ok(name) => name,
+                    Err(_) => {
+                        files.push(Err(Error::InvalidUtf8));
+
+                        if !FindNextFileA(search_handle, &mut fd) {
+                            break;
+                        }
+                        continue;
+                    }
+                };
                 let path = [path, name].join("\\");
 
                 //Skip these results.

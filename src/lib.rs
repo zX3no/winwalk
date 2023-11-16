@@ -8,15 +8,34 @@ const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
 #[link(name = "user32")]
 extern "system" {
     fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
-    fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
-    fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
     fn FindClose(hFindFile: *mut c_void) -> bool;
     fn GetLogicalDrives() -> u32;
+
+    // fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
+    // fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
+    fn FindFirstFileW(lpFileName: *const u16, lpFindFileData: *mut FindDataW) -> *mut c_void;
+    fn FindNextFileW(hFindFile: *mut c_void, lpFindFileData: *mut FindDataW) -> bool;
+
 }
+
+// #[repr(C)]
+// #[derive(Copy, Clone, Debug)]
+// struct FindDataA {
+//     pub file_attributes: u32,
+//     pub creation_time: FileTime,
+//     pub last_access_time: FileTime,
+//     pub last_write_time: FileTime,
+//     pub file_size_high: u32,
+//     pub file_size_low: u32,
+//     pub reserved0: u32,
+//     pub reserved1: u32,
+//     pub file_name: [i8; 260],
+//     pub alternate_file_name: [i8; 14],
+// }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct FindDataA {
+struct FindDataW {
     pub file_attributes: u32,
     pub creation_time: FileTime,
     pub last_access_time: FileTime,
@@ -25,8 +44,8 @@ struct FindDataA {
     pub file_size_low: u32,
     pub reserved0: u32,
     pub reserved1: u32,
-    pub file_name: [i8; 260],
-    pub alternate_file_name: [i8; 14],
+    pub file_name: [u16; 260],
+    pub alternate_file_name: [u16; 14],
 }
 
 #[repr(C)]
@@ -40,7 +59,6 @@ struct FileTime {
 pub enum Error {
     InvalidSearch(String),
     InvalidSystemTime,
-    InvalidUtf8,
 }
 
 impl TryInto<SystemTime> for FileTime {
@@ -154,11 +172,12 @@ impl DirEntry {
 pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Error>> {
     unsafe {
         let path = path.as_ref();
-        let mut fd: FindDataA = core::mem::zeroed();
+        let mut fd: FindDataW = core::mem::zeroed();
         let mut files = Vec::new();
 
-        let search_pattern = [path.as_bytes(), &[b'\\', b'*', 0]].concat();
-        let search_handle = FindFirstFileA(search_pattern.as_ptr() as *mut i8, &mut fd);
+        let path_utf16: Vec<u16> = path.encode_utf16().collect();
+        let search_pattern = [path_utf16.as_slice(), &[b'\\' as u16, b'*' as u16, 0]].concat();
+        let search_handle = FindFirstFileW(search_pattern.as_ptr() as *mut u16, &mut fd);
 
         if !search_handle.is_null() && search_handle != INVALID_HANDLE_VALUE {
             loop {
@@ -166,28 +185,16 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
                 let end = fd
                     .file_name
                     .iter()
-                    .position(|&c| c == b'\0' as i8)
+                    .position(|&c| c == b'\0' as u16)
                     .unwrap_or(fd.file_name.len());
-                let slice = from_raw_parts(fd.file_name.as_ptr() as *const u8, end);
-                //TODO: Change to utf-16 or osstr.
-                //https://github.com/rust-lang/rust/issues/12056
-                let name = match core::str::from_utf8(slice) {
-                    Ok(name) => name,
-                    Err(_) => {
-                        files.push(Err(Error::InvalidUtf8));
-
-                        if !FindNextFileA(search_handle, &mut fd) {
-                            break;
-                        }
-                        continue;
-                    }
-                };
-                let path = [path, name].join("\\");
+                let slice = from_raw_parts(fd.file_name.as_ptr() as *const u16, end);
+                let name = String::from_utf16(slice).unwrap();
+                let path = [path, name.as_str()].join("\\");
 
                 //Skip these results.
                 if name == ".." || name == "." {
                     fd = core::mem::zeroed();
-                    if !FindNextFileA(search_handle, &mut fd) {
+                    if !FindNextFileW(search_handle, &mut fd) {
                         break;
                     }
                     continue;
@@ -212,7 +219,7 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
                 }
 
                 files.push(Ok(DirEntry {
-                    name: name.to_owned(),
+                    name,
                     path,
                     date_created,
                     last_access,
@@ -224,7 +231,7 @@ pub fn walkdir<S: AsRef<str>>(path: S, depth: usize) -> Vec<Result<DirEntry, Err
 
                 fd = core::mem::zeroed();
 
-                if !FindNextFileA(search_handle, &mut fd) {
+                if !FindNextFileW(search_handle, &mut fd) {
                     break;
                 }
             }

@@ -7,7 +7,7 @@ fn main() {
 
     println!();
 
-    for file in walkdir("D:\\Desktop", 1).into_iter().flatten() {
+    for file in walkdir("D:\\Opus\\Iglooghost", 1).into_iter().flatten() {
         let pad = if file.is_folder { "  " } else { "--" };
         println!("{pad}{}", file.name);
         println!("  {:?}", file.path);

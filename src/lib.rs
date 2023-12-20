@@ -10,28 +10,10 @@ extern "system" {
     fn FileTimeToSystemTime(lpFileTime: *const FileTime, lpSystemTime: *mut SystemTime) -> bool;
     fn FindClose(hFindFile: *mut c_void) -> bool;
     fn GetLogicalDrives() -> u32;
-
-    // fn FindFirstFileA(lpFileName: *const i8, lpFindFileData: *mut FindDataA) -> *mut c_void;
-    // fn FindNextFileA(hFindFile: *mut c_void, lpFindFileData: *mut FindDataA) -> bool;
     fn FindFirstFileW(lpFileName: *const u16, lpFindFileData: *mut FindDataW) -> *mut c_void;
     fn FindNextFileW(hFindFile: *mut c_void, lpFindFileData: *mut FindDataW) -> bool;
 
 }
-
-// #[repr(C)]
-// #[derive(Copy, Clone, Debug)]
-// struct FindDataA {
-//     pub file_attributes: u32,
-//     pub creation_time: FileTime,
-//     pub last_access_time: FileTime,
-//     pub last_write_time: FileTime,
-//     pub file_size_high: u32,
-//     pub file_size_low: u32,
-//     pub reserved0: u32,
-//     pub reserved1: u32,
-//     pub file_name: [i8; 260],
-//     pub alternate_file_name: [i8; 14],
-// }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
